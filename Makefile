@@ -1,9 +1,3 @@
-.DEFAULT_GOAL := build
-
-.PHONY: build
-build:
-	go build .
-
 
 .PHONY: docker-all
 docker-all: docker-env-up docker-test docker-env-down

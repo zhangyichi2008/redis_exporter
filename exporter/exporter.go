@@ -26,8 +26,9 @@ type BuildInfo struct {
 type Exporter struct {
 	sync.Mutex
 
-	redisAddr string
-	namespace string
+	redisAddr    string
+	sentinelAddr string
+	namespace    string
 
 	totalScrapes              prometheus.Counter
 	scrapeDuration            prometheus.Summary
@@ -83,13 +84,14 @@ type Options struct {
 }
 
 // NewRedisExporter returns a new exporter of Redis metrics.
-func NewRedisExporter(redisURI string, opts Options) (*Exporter, error) {
+func NewRedisExporter(redisURI string, sentinelURI string, opts Options) (*Exporter, error) {
 	log.Debugf("NewRedisExporter options: %#v", opts)
 
 	e := &Exporter{
-		redisAddr: redisURI,
-		options:   opts,
-		namespace: opts.Namespace,
+		redisAddr:    redisURI,
+		sentinelAddr: sentinelURI,
+		options:      opts,
+		namespace:    opts.Namespace,
 
 		buildInfo: opts.BuildInfo,
 
@@ -355,7 +357,8 @@ func NewRedisExporter(redisURI string, opts Options) (*Exporter, error) {
 		"db_keys_expiring":                             {txt: "Total number of expiring keys by DB", lbls: []string{"db"}},
 		"db_keys_cached":                               {txt: "Total number of cached keys by DB", lbls: []string{"db"}},
 		"errors_total":                                 {txt: `Total number of errors per error type`, lbls: []string{"err"}},
-		"exporter_last_scrape_error":                   {txt: "The last scrape error status.", lbls: []string{"err"}},
+		"exporter_last_scrape_error":                   {txt: "The last scrape redis error status.", lbls: []string{"err"}},
+		"sentinel_last_scrape_error":                   {txt: "The last scrape sentinel error status.", lbls: []string{"err"}},
 		"instance_info":                                {txt: "Information about the Redis instance", lbls: []string{"role", "redis_version", "redis_build_id", "redis_mode", "os", "maxmemory_policy", "tcp_port", "run_id", "process_id"}},
 		"key_group_count":                              {txt: `Count of keys in key group`, lbls: []string{"db", "key_group"}},
 		"key_group_memory_usage_bytes":                 {txt: `Total memory usage of key group in bytes`, lbls: []string{"db", "key_group"}},
@@ -392,16 +395,11 @@ func NewRedisExporter(redisURI string, opts Options) (*Exporter, error) {
 		"stream_group_consumer_idle_seconds":           {txt: `Consumer idle time in seconds`, lbls: []string{"db", "stream", "group", "consumer"}},
 		"stream_group_consumer_messages_pending":       {txt: `Pending number of messages for this specific consumer`, lbls: []string{"db", "stream", "group", "consumer"}},
 		"stream_group_consumers":                       {txt: `Consumers count of stream group`, lbls: []string{"db", "stream", "group"}},
-		"stream_group_entries_read":                    {txt: `Total number of entries read from the stream group`, lbls: []string{"db", "stream", "group"}},
-		"stream_group_lag":                             {txt: `The number of messages waiting to be delivered to the stream group's consumers`, lbls: []string{"db", "stream", "group"}},
 		"stream_group_last_delivered_id":               {txt: `The epoch timestamp (ms) of the last delivered message`, lbls: []string{"db", "stream", "group"}},
 		"stream_group_messages_pending":                {txt: `Pending number of messages in that stream group`, lbls: []string{"db", "stream", "group"}},
 		"stream_groups":                                {txt: `Groups count of stream`, lbls: []string{"db", "stream"}},
 		"stream_last_generated_id":                     {txt: `The epoch timestamp (ms) of the latest message on the stream`, lbls: []string{"db", "stream"}},
 		"stream_length":                                {txt: `The number of elements of the stream`, lbls: []string{"db", "stream"}},
-		"stream_max_deleted_entry_id":                  {txt: `The epoch timestamp (ms) of last message was deleted from the stream`, lbls: []string{"db", "stream"}},
-		"stream_first_entry_id":                        {txt: `The epoch timestamp (ms) of the first message in the stream`, lbls: []string{"db", "stream"}},
-		"stream_last_entry_id":                         {txt: `The epoch timestamp (ms) of the last message in the stream`, lbls: []string{"db", "stream"}},
 		"stream_radix_tree_keys":                       {txt: `Radix tree keys count"`, lbls: []string{"db", "stream"}},
 		"stream_radix_tree_nodes":                      {txt: `Radix tree nodes count`, lbls: []string{"db", "stream"}},
 		"up":                                           {txt: "Information about the Redis instance"},
@@ -482,6 +480,17 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		e.registerConstMetricGauge(ch, "exporter_last_scrape_duration_seconds", took)
 	}
 
+	if e.sentinelAddr != "" {
+		var up float64
+		if err := e.scrapeSentinelHost(ch); err != nil {
+			e.registerConstMetricGauge(ch, "sentinel_last_scrape_error", 1.0, fmt.Sprintf("%s", err))
+		} else {
+			up = 1
+			e.registerConstMetricGauge(ch, "sentinel_last_scrape_error", 0, "")
+		}
+		e.registerConstMetricGauge(ch, "sentinel_up", up)
+	}
+
 	ch <- e.totalScrapes
 	ch <- e.scrapeDuration
 	ch <- e.targetScrapeRequestErrors
@@ -501,7 +510,7 @@ func (e *Exporter) extractConfigMetrics(ch chan<- prometheus.Metric, config []in
 
 		strVal, err := redis.String(config[pos*2+1], nil)
 		if err != nil {
-			log.Debugf("invalid config value for key name %s, err: %s, skipped", strKey, err)
+			log.Errorf("invalid config value for key name %s, err: %s, skipped", strKey, err)
 			continue
 		}
 
@@ -537,6 +546,45 @@ func (e *Exporter) extractConfigMetrics(ch chan<- prometheus.Metric, config []in
 		}
 	}
 	return
+}
+
+func (e *Exporter) scrapeSentinelHost(ch chan<- prometheus.Metric) error {
+	startTime := time.Now()
+	connectTookSeconds := time.Since(startTime).Seconds()
+	c, err := e.connectToSentinel()
+
+	if err != nil {
+		var redactedAddr string
+		if sentinelURL, err2 := url.Parse(e.sentinelAddr); err2 != nil {
+			log.Debugf("url.Parse( %s ) err: %s", e.sentinelAddr, err2)
+			redactedAddr = "<redacted>"
+		} else {
+			redactedAddr = sentinelURL.Redacted()
+		}
+		log.Errorf("Couldn't connect to sentinel instance (%s)", redactedAddr)
+		log.Debugf("connectToRedis( %s ) err: %s", e.sentinelAddr, err)
+		return err
+	}
+	defer c.Close()
+
+	log.Debugf("connected to: %s", e.sentinelAddr)
+	log.Debugf("connecting took %f seconds", connectTookSeconds)
+	infoSentinel, err := redis.String(doRedisCmd(c, "INFO", "Sentinel"))
+
+	if err != nil || infoSentinel == "" {
+		log.Debugf("Sentinel INFO ALL err: %s", err)
+		infoSentinel, err = redis.String(doRedisCmd(c, "INFO"))
+		if err != nil {
+			log.Errorf("Sentinel INFO err: %s", err)
+			return err
+		}
+	}
+	log.Debugf("Sentinel INFO ALL result: [%#v]", infoSentinel)
+
+	if strings.Contains(infoSentinel, "# Sentinel") {
+		e.sentinelInfoMetrics(ch, infoSentinel)
+	}
+	return nil
 }
 
 func (e *Exporter) scrapeRedisHost(ch chan<- prometheus.Metric) error {
@@ -584,6 +632,7 @@ func (e *Exporter) scrapeRedisHost(ch chan<- prometheus.Metric) error {
 
 	dbCount := 0
 	if config, err := redis.Values(doRedisCmd(c, e.options.ConfigCommandName, "GET", "*")); err == nil {
+		log.Debugf("Redis CONFIG GET * result: [%#v]", config)
 		dbCount, err = e.extractConfigMetrics(ch, config)
 		if err != nil {
 			log.Errorf("Redis CONFIG err: %s", err)
@@ -646,10 +695,6 @@ func (e *Exporter) scrapeRedisHost(ch chan<- prometheus.Metric) error {
 	e.extractCountKeysMetrics(ch, c)
 
 	e.extractKeyGroupMetrics(ch, c, dbCount)
-
-	if strings.Contains(infoAll, "# Sentinel") {
-		e.extractSentinelMetrics(ch, c)
-	}
 
 	if e.options.ExportClientList {
 		e.extractConnectedClientMetrics(ch, c)

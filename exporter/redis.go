@@ -39,6 +39,22 @@ func (e *Exporter) configureOptions(uri string) ([]redis.DialOption, error) {
 	return options, nil
 }
 
+func (e *Exporter) configureOptions2(uri string) ([]redis.DialOption, error) {
+	tlsConfig, err := e.CreateClientTLSConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	options := []redis.DialOption{
+		redis.DialConnectTimeout(e.options.ConnectionTimeouts),
+		redis.DialReadTimeout(e.options.ConnectionTimeouts),
+		redis.DialWriteTimeout(e.options.ConnectionTimeouts),
+		redis.DialTLSConfig(tlsConfig),
+		redis.DialUseTLS(strings.HasPrefix(e.sentinelAddr, "rediss://")),
+	}
+	return options, nil
+}
+
 func (e *Exporter) connectToRedis() (redis.Conn, error) {
 	uri := e.redisAddr
 	if !strings.Contains(uri, "://") {
@@ -60,6 +76,32 @@ func (e *Exporter) connectToRedis() (redis.Conn, error) {
 		} else {
 			log.Debugf("Trying: Dial(): tcp %s", e.redisAddr)
 			c, err = redis.Dial("tcp", e.redisAddr, options...)
+		}
+	}
+	return c, err
+}
+
+func (e *Exporter) connectToSentinel() (redis.Conn, error) {
+	uri := e.sentinelAddr
+	if !strings.Contains(uri, "://") {
+		uri = "redis://" + uri
+	}
+
+	options, err := e.configureOptions2(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debugf("Trying DialURL(): %s", uri)
+	c, err := redis.DialURL(uri, options...)
+	if err != nil {
+		log.Debugf("DialURL() failed, err: %s", err)
+		if frags := strings.Split(e.sentinelAddr, "://"); len(frags) == 2 {
+			log.Debugf("Trying: Dial(): %s %s", frags[0], frags[1])
+			c, err = redis.Dial(frags[0], frags[1], options...)
+		} else {
+			log.Debugf("Trying: Dial(): tcp %s", e.sentinelAddr)
+			c, err = redis.Dial("tcp", e.sentinelAddr, options...)
 		}
 	}
 	return c, err

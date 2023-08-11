@@ -6,9 +6,77 @@
 Prometheus exporter for Redis metrics.\
 Supports Redis 2.x, 3.x, 4.x, 5.x, 6.x, and 7.x
 
-#### Ukraine is currently suffering from Russian aggression, [please consider supporting Ukraine with a donation](https://www.supportukraine.co/).
+**v1.51.1 / 2023-08-07**
 
-[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
+**[ADD] 增加对sentinel集群状态的监控**
+
+- HELP redis_sentinel_up sentinel_up metric
+- TYPE redis_sentinel_up gauge
+- redis_sentinel_up 1
+- HELP redis_sentinel_master_sentinels The number of sentinels monitoring this master
+- TYPE redis_sentinel_master_sentinels gauge
+- redis_sentinel_master_sentinels{master_address="10.1.1.1:6379",master_name="mymaster"} 3
+- HELP redis_sentinel_master_slaves The number of slaves of the master
+- TYPE redis_sentinel_master_slaves gauge
+- redis_sentinel_master_slaves{master_address="10.1.1.1:6379",master_name="mymaster"} 2
+- HELP redis_sentinel_master_status Master status on Sentinel
+- TYPE redis_sentinel_master_status gauge
+- redis_sentinel_master_status{master_address="10.1.1.1:6379",master_name="mymaster",master_status="ok"} 1
+- HELP redis_sentinel_masters The number of masters this sentinel is watching
+- TYPE redis_sentinel_masters gauge
+- redis_sentinel_masters 1
+- HELP redis_sentinel_running_scripts Number of scripts in execution right now
+- TYPE redis_sentinel_running_scripts gauge
+- redis_sentinel_running_scripts 0
+- HELP redis_sentinel_scripts_queue_length Queue of user scripts to execute
+- TYPE redis_sentinel_scripts_queue_length gauge
+- redis_sentinel_scripts_queue_length 0
+- HELP redis_sentinel_simulate_failure_flags Failures simulations
+- TYPE redis_sentinel_simulate_failure_flags gauge
+- redis_sentinel_simulate_failure_flags 0
+- HELP redis_sentinel_tilt Sentinel is in TILT mode
+- TYPE redis_sentinel_tilt gauge
+- redis_sentinel_tilt 0
+- HELP redis_sentinel_last_scrape_error The last scrape sentinel error status.
+- TYPE redis_sentinel_last_scrape_error gauge
+- redis_sentinel_last_scrape_error{err=""} 0
+
+
+**[DEL] 移除以go_开头的33个监控项,具体如下：**
+
+- go_gc_duration_seconds{quantile="0"}
+- go_gc_duration_seconds{quantile="0.25"}
+- go_gc_duration_seconds{quantile="0.5"}
+- go_gc_duration_seconds{quantile="0.75"}
+- go_gc_duration_seconds{quantile="1"}
+- go_gc_duration_seconds_sum
+- go_gc_duration_seconds_count
+- go_goroutines
+- go_info{version="go1.19.1"}
+- go_memstats_alloc_bytes
+- go_memstats_alloc_bytes_total
+- go_memstats_buck_hash_sys_bytes
+- go_memstats_frees_total
+- go_memstats_gc_sys_bytes
+- go_memstats_heap_alloc_bytes
+- go_memstats_heap_idle_bytes
+- go_memstats_heap_inuse_bytes
+- go_memstats_heap_objects
+- go_memstats_heap_released_bytes
+- go_memstats_heap_sys_bytes
+- go_memstats_last_gc_time_seconds
+- go_memstats_lookups_total
+- go_memstats_mallocs_total
+- go_memstats_mcache_inuse_bytes
+- go_memstats_mcache_sys_bytes
+- go_memstats_mspan_inuse_bytes
+- go_memstats_mspan_sys_bytes
+- go_memstats_next_gc_bytes
+- go_memstats_other_sys_bytes
+- go_memstats_stack_inuse_bytes
+- go_memstats_stack_sys_bytes
+- go_memstats_sys_bytes
+- go_threads
 
 
 ## Building and running the exporter
@@ -16,7 +84,6 @@ Supports Redis 2.x, 3.x, 4.x, 5.x, 6.x, and 7.x
 ### Build and run locally
 
 ```sh
-git clone https://github.com/oliver006/redis_exporter.git
 cd redis_exporter
 go build .
 ./redis_exporter --version
@@ -140,7 +207,8 @@ Prometheus uses file watches and all changes to the json file are applied immedi
 
 | Name                    | Environment Variable Name              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 |-------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| redis.addr              | REDIS_ADDR                             | Address of the Redis instance, defaults to `redis://localhost:6379`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| redis.addr              | REDIS_ADDR                             | Address of the Redis instance, defaults to `redis://localhost:6379`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| sentinel.addr           | SENTINEL_ADDR                          | Address of the Sentinel instance, defaults to `host:port ex:10.66.14.104:26379`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | redis.user              | REDIS_USER                             | User name to use for authentication (Redis ACL for Redis 6.0 and newer).                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | redis.password          | REDIS_PASSWORD                         | Password of the Redis instance, defaults to `""` (no password).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | redis.password-file     | REDIS_PASSWORD_FILE                    | Password file of the Redis instance to scrape, defaults to `""` (no password file).                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -204,139 +272,3 @@ You can use the following Redis command to set up the user, just replace `<<<USE
 ```
 ACL SETUSER <<<USERNAME>>> +client +ping +info +config|get +cluster|info +slowlog +latency +memory +select +get +scan +xinfo +type +pfcount +strlen +llen +scard +zcard +hlen +xlen +eval allkeys on > <<<PASSWORD>>>
 ```
-
-
-### Run via Docker
-
-The latest release is automatically published to the [Docker registry](https://hub.docker.com/r/oliver006/redis_exporter/).
-
-You can run it like this:
-
-```sh
-docker run -d --name redis_exporter -p 9121:9121 oliver006/redis_exporter
-```
-
-Docker images are also published to the [quay.io docker repo](https://quay.io/oliver006/redis_exporter) so you can pull them from there if for instance you run into rate limiting issues with Docker hub.
-
-```sh
-docker run -d --name redis_exporter -p 9121:9121 quay.io/oliver006/redis_exporter
-```
-
-The `latest` docker image contains only the exporter binary.
-If e.g. for debugging purposes, you need the exporter running
-in an image that has a shell then you can run the `alpine` image:
-
-```sh
-docker run -d --name redis_exporter -p 9121:9121 oliver006/redis_exporter:alpine
-```
-
-If you try to access a Redis instance running on the host node, you'll need to add `--network host` so the
-redis_exporter container can access it:
-
-```sh
-docker run -d --name redis_exporter --network host oliver006/redis_exporter
-```
-
-### Run on Kubernetes
-
-[Here](contrib/k8s-redis-and-exporter-deployment.yaml) is an example Kubernetes deployment configuration for how to deploy the redis_exporter as a sidecar to a Redis instance.
-
-
-### Tile38
-
-[Tile38](https://tile38.com) now has native Prometheus support for exporting server metrics and basic stats about number of objects, strings, etc.
-You can also use redis_exporter to export Tile38 metrics, especially more advanced metrics by using Lua scripts or the `-check-keys` flag.\
-To enable Tile38 support, run the exporter with `--is-tile38=true`.
-
-
-## What's exported
-
-Most items from the INFO command are exported,
-see [Redis documentation](https://redis.io/commands/info) for details.\
-In addition, for every database there are metrics for total keys, expiring keys and the average TTL for keys in the database.\
-You can also export values of keys by using the `-check-keys` (or related) flag. The exporter will also export the size (or, depending on the data type, the length) of the key.
-This can be used to export the number of elements in (sorted) sets, hashes, lists, streams, etc.
-If a key is in string format and matches with `--check-keys` (or related) then its string value will be exported as a label in the `key_value_as_string` metric.
-
-If you require custom metric collection, you can provide comma separated list of path(s) to [Redis Lua script(s)](https://redis.io/commands/eval) using the `-script` flag. If you pass only one script, you can omit comma. An example can be found [in the contrib folder](./contrib/sample_collect_script.lua).
-
-
-### The redis_memory_max_bytes metric
-
-The metric `redis_memory_max_bytes`  will show the maximum number of bytes Redis can use.\
-It is zero if no memory limit is set for the Redis instance you're scraping (this is the default setting for Redis).\
-You can confirm that's the case by checking if the metric `redis_config_maxmemory` is zero or by connecting to the Redis instance via redis-cli and running the command `CONFIG GET MAXMEMORY`.
-
-
-## What it looks like
-
-Example [Grafana](http://grafana.org/) screenshots:
-![redis_exporter_screen_01](https://cloud.githubusercontent.com/assets/1222339/19412031/897549c6-92da-11e6-84a0-b091f9deb81d.png)
-
-![redis_exporter_screen_02](https://cloud.githubusercontent.com/assets/1222339/19412041/dee6d7bc-92da-11e6-84f8-610c025d6182.png)
-
-Grafana dashboard is available on [grafana.com](https://grafana.com/grafana/dashboards/763-redis-dashboard-for-prometheus-redis-exporter-1-x/) and/or [github.com](contrib/grafana_prometheus_redis_dashboard.json).
-
-### Viewing multiple Redis simultaneously
-
-If running [Redis Sentinel](https://redis.io/topics/sentinel), it may be desirable to view the metrics of the various cluster members simultaneously. For this reason the dashboard's drop down is of the multi-value type, allowing for the selection of multiple Redis. Please note that there is a  caveat; the single stat panels up top namely `uptime`, `total memory use` and `clients` do not function upon viewing multiple Redis.
-
-
-## Using the mixin
-There is a set of sample rules, alerts and dashboards available in [redis-mixin](contrib/redis-mixin/)
-
-## Upgrading from 0.x to 1.x
-
-[PR #256](https://github.com/oliver006/redis_exporter/pull/256) introduced breaking changes which were released as version v1.0.0.
-
-If you only scrape one Redis instance and use command line flags `--redis.address`
-and `--redis.password` then you're most probably not affected.
-Otherwise, please see [PR #256](https://github.com/oliver006/redis_exporter/pull/256) and [this README](https://github.com/oliver006/redis_exporter#prometheus-configuration-to-scrape-multiple-redis-hosts) for more information.
-
-## Memory Usage Aggregation by Key Groups
-
-When a single Redis instance is used for multiple purposes, it is useful to be able to see how Redis memory is consumed among the different usage scenarios. This is particularly important when a Redis instance with no eviction policy is running low on memory as we want to identify whether certain applications are misbehaving (e.g. not deleting keys that are no longer in use) or the Redis instance needs to be scaled up to handle the increased resource demand. Fortunately, most applications using Redis will employ some sort of naming conventions for keys tied to their specific purpose such as (hierarchical) namespace prefixes which can be exploited by the check-keys, check-single-keys, and count-keys parameters of redis_exporter to surface the memory usage metrics of specific scenarios. *Memory usage aggregation by key groups* takes this one step further by harnessing the flexibility of Redis LUA scripting support to classify all keys on a Redis instance into groups through a list of user-defined [LUA regular expressions](https://www.lua.org/pil/20.1.html) so memory usage metrics can be aggregated into readily identifiable groups.
-
-To enable memory usage aggregation by key groups, simply specify a non-empty comma-separated list of LUA regular expressions through the `check-key-groups` redis_exporter parameter. On each aggregation of memory metrics by key groups, redis_exporter will set up a `SCAN` cursor through all keys for each Redis database to be processed in batches via a LUA script. Each key batch is then processed by the same LUA script on a key-by-key basis as follows:
-
-  1. The `MEMORY USAGE` command is called to gather memory usage for each key
-  2. The specified LUA regexes are applied to each key in the specified order, and the group name that a given key belongs to will be derived from concatenating the capture groups of the first regex that matches the key. For example, applying the regex `^(.*)_[^_]+$` to the key `key_exp_Nick` would yield a group name of `key_exp`. If none of the specified regexes matches a key, the key will be assigned to the `unclassified` group
-
-Once a key has been classified, the memory usage and key counter for the corresponding group will be incremented in a local LUA table. This aggregated metrics table will then be returned alongside the next `SCAN` cursor position to redis_exporter when all keys in a batch have been processed, and redis_exporter can aggregate the data from all batches into a single table of grouped memory usage metrics for the Prometheus metrics scrapper.
-
-Besides making the full flexibility of LUA regex available for classifying keys into groups, the LUA script also has the benefit of reducing network traffic by executing all `MEMORY USAGE` commands on the Redis server and returning aggregated data to redis_exporter in a far more compact format than key-level data. The use of `SCAN` cursor over batches of keys processed by a server-side LUA script also helps prevent unbounded latency bubble in Redis's single processing thread, and the batch size can be tailored to specific environments via the `check-keys-batch-size` parameter.
-
-Scanning the entire key space of a Redis instance may sound a lttle extravagant, but it takes only a single scan to classify all keys into groups, and on a moderately sized system with ~780K keys and a rather complex list of 17 regexes, it takes an average of ~5s to perform a full aggregation of memory usage by key groups. Of course, the actual performance for specific systems will vary widely depending on the total number of keys, the number and complexity of regexes used for classification, and the configured batch size.
-
-To protect Prometheus from being overwhelmed by a large number of time series resulting from misconfigured group classification regular expression (e.g. applying the regular expression `^(.*)$` where each key will be classified into its own distinct group), a limit on the number of distinct key groups *per Redis database* can be configured via the `max-distinct-key-groups` parameter. If the `max-distinct-key-groups` limit is exceeded, only the key groups with the highest memory usage within the limit will be tracked separately, remaining key groups will be reported under a single `overflow` key group.
-
-Here is a list of additional metrics that will be exposed when memory usage aggregation by key groups is enabled:
-
-| Name                                               | Labels       | Description                                                                                   |
-|----------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------|
-| redis_key_group_count                              | db,key_group | Number of keys in a key group                                                                 |
-| redis_key_group_memory_usage_bytes                 | db,key_group | Memory usage by key group                                                                     |
-| redis_number_of_distinct_key_groups                | db           | Number of distinct key groups in a Redis database when the `overflow` group is fully expanded |
-| redis_last_key_groups_scrape_duration_milliseconds |              | Duration of the last memory usage aggregation by key groups in milliseconds                   |
-
-### Script to collect Redis lists and respective sizes.
-If using Redis version < 4.0, most of the helpful metrics which we need to gather based on length or memory is not possible via default redis_exporter.
-With the help of LUA scripts, we can gather these metrics.
-One of these scripts [contrib/collect_lists_length_growing.lua](./contrib/collect_lists_length_growing.lua) will help to collect the length of redis lists.
-With this count, we can take following actions such as Create alerts or dashboards in Grafana or any similar tools with these Prometheus metrics.
-
-## Development
-
-The tests require a variety of real Redis instances to not only verify correctness of the exporter but also
-compatibility with older versions of Redis and with Redis-like systems like KeyDB or Tile38.\
-The [contrib/docker-compose-for-tests.yml](./contrib/docker-compose-for-tests.yml) file has service definitions for
-everything that's needed.\
-You can bring up the Redis test instances first by running `make docker-env-up` and then, every time you want to run the tests, you can run `make docker-test`. This will mount the current directory (with the .go source files) into a docker container and kick off the tests.\
-Once you're done testing you can bring down the stack by running `make docker-env-down`.\
-Or you can bring up the stack, run the tests, and then tear down the stack, all in one shot, by running `make docker-all`.
-
-***Note.** Tests initialization can lead to unexpected results when using a persistent testing environment. When `make docker-env-up` is executed once and `make docker-test` is constantly run or stopped during execution, the number of keys in the database changes, which can lead to unexpected failures of tests. Use `make docker-env-down` periodacally to clean up as a workaround.*
-
-## Communal effort
-
-Open an issue or PR if you have more suggestions, questions or ideas about what to add.

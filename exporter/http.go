@@ -78,7 +78,7 @@ func (e *Exporter) scrapeHandler(w http.ResponseWriter, r *http.Request) {
 	registry := prometheus.NewRegistry()
 	opts.Registry = registry
 
-	_, err = NewRedisExporter(target, opts)
+	_, err = NewRedisExporter(target, "", opts)
 	if err != nil {
 		http.Error(w, "NewRedisExporter() err: err", http.StatusBadRequest)
 		e.targetScrapeRequestErrors.Inc()
